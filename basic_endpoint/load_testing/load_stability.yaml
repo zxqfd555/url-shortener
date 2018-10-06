@@ -6,7 +6,7 @@ phantom:
   address: localhost:18080
   load_profile:
     load_type: rps
-    schedule: line(100, 1000, 30s) line(1000, 2000, 3m)
+    schedule: line(100, 13000, 50s) line(13000, 13000, 5m)
   uris:
     - /hello
 telegraf:
