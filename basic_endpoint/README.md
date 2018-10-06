@@ -1,6 +1,8 @@
-Решил использовать в качестве фреймворка Crow: https://github.com/ipkn/crow
+# Простейший endpoint на C++
 
-Как завести на Ubuntu:
+В качестве фреймвока использован Crow: https://github.com/ipkn/crow
+
+## Как завести на Ubuntu
 
  1. Поставить зависимости.
 
@@ -18,3 +20,24 @@
 
 Походить в свежесозданный endpoint можно через `make test`, но вообще route там /hello.
 
+## Как запустить с nginx
+
+ 1. Поставить nginx.
+ 
+ `sudo apt-get install nginx-full`
+ 
+ 2. Сделать бэкап конфига.
+ 
+ `sudo cp /etc/nginx/nginx.conf /etc/nginx/nginx-backup.conf`
+ 
+ 3. Подменить конфиг на свой.
+ 
+ `sudo cp nginx.conf /etc/nginx/nginx.conf`
+ 
+ 4. Запустить.
+ 
+ `sudo /etc/init.d/nginx start`
+ 
+ 5. Лог доступа будет писаться в `/usr/share/nginx/access.log`
+ 
+ 6. `curl "http://localhost/hw"` чтобы проверить, что все работает.
