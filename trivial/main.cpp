@@ -75,13 +75,13 @@ public:
         bsoncxx::stdx::optional<bsoncxx::document::value> maybeResult = collection.find_one(bsoncxx::builder::stream::document{} << "slug" << slug << bsoncxx::builder::stream::finalize);
 
         if (maybeResult) {
-            bsoncxx::document::view view = maybeResult.value().view();
-
-            result->Slug = slug;
-            result->TTL = view.find("ttl")->get_int64().value;
-            result->ExpirationTimestamp = view.find("expiration_timestamp")->get_int64().value;
-            result->OriginalUrl = view.find("original_url")->get_utf8().value.to_string();
-
+            if (result != nullptr) {
+                bsoncxx::document::view view = maybeResult.value().view();
+                result->Slug = slug;
+                result->TTL = view.find("ttl")->get_int64().value;
+                result->ExpirationTimestamp = view.find("expiration_timestamp")->get_int64().value;
+                result->OriginalUrl = view.find("original_url")->get_utf8().value.to_string();
+            }
             return true;
         }
         return false;
