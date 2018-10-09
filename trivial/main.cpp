@@ -1,4 +1,6 @@
 #include <ctime>
+#include <iostream>
+#include <unordered_set>
 
 #include "crow.h"
 #include <bsoncxx/builder/stream/document.hpp>
@@ -36,11 +38,11 @@ private:
             for (size_t i = 0; i < SLUG_LENGTH; ++i) {
                 uint32_t currentCharIndex = rand() % 62;
                 if (currentCharIndex < 26) {
-                    slug += std::string('a' + currentCharIndex, 1);
+                    slug += (char)('a' + currentCharIndex);
                 } else if (currentCharIndex < 26 + 26) {
-                    slug += std::string('A' + currentCharIndex - 26, 1);
+                    slug += (char)('A' + currentCharIndex - 26);
                 } else {
-                    slug += std::string('0' + currentCharIndex - 26 - 26, 1);
+                    slug += (char)('0' + currentCharIndex - 26 - 26);
                 }
             }
         }
@@ -64,7 +66,6 @@ public:
         document << "slug" << slug;
         document << "ttl" << (int64_t)ttl;
         document << "expiration_timestamp" << (int64_t)(GetCurrentTimestamp() + ttl);
-        document << bsoncxx::builder::stream::finalize;
         collection.insert_one(document.view());
         
         return slug;
@@ -86,29 +87,84 @@ public:
         }
         return false;
     }
+    
+    void ExtendLinkLifetime (const std::string& slug, const uint32_t newExpirationTimestamp) const {
+        auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
+        collection.update_one(
+            bsoncxx::builder::stream::document{} << "slug" << slug << bsoncxx::builder::stream::finalize,
+            bsoncxx::builder::stream::document{} << "$set" << bsoncxx::builder::stream::open_document <<
+            "expiration_timestamp" << (int64_t)newExpirationTimestamp << bsoncxx::builder::stream::close_document << bsoncxx::builder::stream::finalize
+        );
+    }
+
+    void DeleteLink (const std::string& slug) const {
+        auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];    
+        collection.delete_one(bsoncxx::builder::stream::document{} << "slug" << slug << bsoncxx::builder::stream::finalize);
+    }
+
+    void DeleteExpiredLinks () const {
+        auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
+        collection.delete_many(
+            bsoncxx::builder::stream::document{} << "expiration_timestamp" << bsoncxx::builder::stream::open_document <<
+            "$lt" << (int64_t)GetCurrentTimestamp() << bsoncxx::builder::stream::close_document << bsoncxx::builder::stream::finalize
+        );
+    }
+};
+
+class TAccessLog {
+private:
+
+    struct TAccessLogEntry {
+        std::string Slug;
+        uint32_t Timestamp;
+        uint32_t LinkTTL;
+
+        TAccessLogEntry() = default;
+
+        TAccessLogEntry(std::string slug, uint32_t timestamp, uint32_t linkTTL)
+            : Slug(slug)
+            , Timestamp(timestamp)
+            , LinkTTL(linkTTL)
+        {
+        }
+    };
+
+    std::vector<TAccessLogEntry> Entries;
+    std::mutex Lock;
+
+public:
+
+    void RegisterVisit (const std::string& slug, const uint32_t timestamp, const uint32_t ttl) {
+        std::lock_guard<std::mutex> g(Lock);
+        Entries.push_back(TAccessLogEntry(slug, timestamp, ttl));
+    }
+
+    void Clear () {
+        std::lock_guard<std::mutex> g(Lock);
+        Entries.clear();
+    }
+
+    void ExtendVisitedLinksLifetimes (const TBasicShortLinkManager& manager) {
+        std::lock_guard<std::mutex> g(Lock);
+
+        std::reverse(Entries.begin(), Entries.end());
+        std::unordered_set<std::string> processedSlugs;
+        for (auto&& entry : Entries) {
+            if (processedSlugs.find(entry.Slug) != processedSlugs.end()) {
+                continue;
+            }
+            manager.ExtendLinkLifetime(entry.Slug, entry.Timestamp + entry.LinkTTL);
+            processedSlugs.insert(entry.Slug);
+        }
+        
+        Clear();
+    }
 };
 
 int main() {
     srand(time(nullptr));
     TBasicShortLinkManager manager;
     crow::SimpleApp app;
-
-    CROW_ROUTE(app, "/<string>")
-        .methods("GET"_method)
-        ([&manager] (std::string slug) {
-            crow::response response;
-
-            TShortLinkRecord result;
-            bool success = manager.GetOriginalLink(slug, &result);
-            if (success && result.TTL <= GetCurrentTimestamp()) {
-                response.add_header("Location", result.OriginalUrl);
-                response.code = 302;
-            } else {
-                response.code = 404;
-            }
-
-            return response;
-        });
 
     CROW_ROUTE(app, "/link")
         .methods("POST"_method)
@@ -126,7 +182,26 @@ int main() {
             return response;
         });
 
-    app.loglevel(crow::LogLevel::CRITICAL);
+    CROW_ROUTE(app, "/<string>")
+        .methods("GET"_method)
+        ([&manager] (std::string slug) {
+            crow::response response;
+
+            TShortLinkRecord result;
+            bool success = manager.GetOriginalLink(slug, &result);
+            if (success && result.ExpirationTimestamp >= GetCurrentTimestamp()) {
+                response.add_header("Location", result.OriginalUrl);
+                response.code = 302;
+                manager.ExtendLinkLifetime(slug, GetCurrentTimestamp() + result.TTL);
+            } else {
+                response.code = 404;
+                manager.DeleteLink(slug);
+            }
+
+            return response;
+        });
+
+    app.loglevel(crow::LogLevel::DEBUG);
     app.port(DEPLOY_PORT)
         .multithreaded()
         .run();
