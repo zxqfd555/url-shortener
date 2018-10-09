@@ -111,3 +111,11 @@ GET `/<slug>`
 
      `db.slug.createIndex({"expiration_timestamp": -1})`
 
+## Установка драйвера MongoDB для C++
+
+  1. Инструкция есть тут: http://mongocxx.org/mongocxx-v3/installation/
+  
+  2. Просто так пример не заведется. Это популярная проблема, ее можно решить, например, собирая и запуская так:
+  
+  `c++ --std=c++11 test.cpp $(pkg-config --cflags --libs libmongocxx) -Wl,-rpath,/usr/local/lib`
+  `LD_LIBRARY_PATH=/usr/local/lib ./test`
