@@ -11,9 +11,6 @@
 
 #include "../common/manager.h"
 
-using std::cerr;
-using std::endl;
-
 const std::string URL_SHORTENER_DB = "url_shortener";
 const std::string URL_SLUG_COLLECTION = "slug";
 
@@ -175,21 +172,21 @@ private:
     std::unique_ptr<std::thread> mainThread;
 
     void ProcessLogEntries () {
-        cerr << "Started LinkActualizerDaemon" << endl;
+        CROW_LOG_INFO << "Started LinkActualizerDaemon";
         while (true) {
-            cerr << "Staring LinkActualizerDaemon iteration" << endl;
+            CROW_LOG_INFO << "Staring LinkActualizerDaemon iteration";
 
             uint32_t tsBeforeLaunch = GetCurrentTimestamp();
             AccessLog.ExtendVisitedLinksLifetimes(LinkManager);
             LinkManager.DeleteExpiredLinks();
             uint32_t timeTotalSpent = GetCurrentTimestamp() - tsBeforeLaunch;
 
-            cerr << "The iteration took " << timeTotalSpent << " seconds" << endl;
+            CROW_LOG_INFO << "The iteration took " << timeTotalSpent << " seconds";
             if (timeTotalSpent < LaunchFrequency) {
-                cerr << "The daemon thread goes to sleep for extra " << LaunchFrequency - timeTotalSpent << " seconds" << endl;
+                CROW_LOG_INFO << "The daemon thread goes to sleep for extra " << LaunchFrequency - timeTotalSpent << " seconds";
                 std::this_thread::sleep_for(std::chrono::seconds(LaunchFrequency - timeTotalSpent));
             } else {
-                std::cerr << "Problem! The update was done in " << timeTotalSpent << " seconds, while we only have " << LaunchFrequency << endl;
+                CROW_LOG_CRITICAL << "Problem! The update was done in " << timeTotalSpent << " seconds, while we only have " << LaunchFrequency;
             }
         }
     }
@@ -207,10 +204,9 @@ public:
     }
 };
 
-TAccessLog AccessLog;
+TAccessLog AccessLog; // Can be large while that stack can be small.
 
 int main() {
-    cerr << "Starting program" << endl;
     TBasicShortLinkManager Manager;
     TLinkActualizerDaemon Daemon(Manager, AccessLog, DAEMON_LAUNCH_FREQUENCY);
     Daemon.Start();
