@@ -114,7 +114,7 @@ int main() {
             return response;
         });
 
-    app.loglevel(crow::LogLevel::DEBUG);
+    app.loglevel(crow::LogLevel::CRITICAL);
     app.port(DEPLOY_PORT)
         .multithreaded()
         .run();

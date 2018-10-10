@@ -13,7 +13,7 @@ def test_creation_and_extension():
     r = requests.post(
         HOST + '/link',
         json={
-            'original_url': 'https://www.yandex.ru',
+            'original_url': 'http://localhost',
             'ttl': 10,
         },
         timeout=1,
@@ -27,14 +27,14 @@ def test_creation_and_extension():
 
     """
     The full cycle of the cleanup is set to 120 sec.
-    So if we do 30 requests with the delay of 5s., we'll definitely catch it.
+    So if we do 130 requests with the delay of 1s., we'll definitely catch it.
     """
     print(' = Querying the link by the acquired location =')
-    for _ in range(30):
+    for _ in range(130):
         r = requests.get(location, timeout=1)
         print('Iteration {}. Got response with the status code:'.format(_), r.status_code)
         assert r.status_code == 200, 'the status code is not 200'
-        time.sleep(5)
+        time.sleep(1)
 
 
 def test_expiration():
