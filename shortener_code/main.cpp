@@ -11,14 +11,20 @@
 
 #include "config.h"
 #include "slug.h"
-#include "../common/manager.h"
 
 uint32_t GetCurrentTimestamp() {
     std::time_t result = std::time(nullptr);
     return (uint32_t)(result);
 }
 
-class TBasicShortLinkManager : public IShortLinkManager {
+struct TShortLinkRecord {
+    std::string Slug;
+    std::string OriginalUrl;
+    uint32_t ExpirationTimestamp;
+    uint32_t TTL;    
+};
+
+class TBasicShortLinkManager {
 private:
     std::shared_ptr<mongocxx::instance> MongoInstance;
     std::shared_ptr<mongocxx::client> MongoClient;
@@ -32,7 +38,7 @@ public:
     {
     }
 
-    virtual std::string AddLink (const std::string& originalUrl, const uint32_t ttl) const override final {
+    virtual std::string AddLink (const std::string& originalUrl, const uint32_t ttl) const {
         std::string slug = SlugGenerator->GenerateNewSlug();
 
         auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
@@ -46,7 +52,7 @@ public:
         return slug;
     }
 
-    virtual bool GetOriginalLink (const std::string& slug, TShortLinkRecord* result) const override final {
+    virtual bool GetOriginalLink (const std::string& slug, TShortLinkRecord* result) const {
         auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
         bsoncxx::stdx::optional<bsoncxx::document::value> maybeResult = collection.find_one(bsoncxx::builder::stream::document{} << "slug" << slug << bsoncxx::builder::stream::finalize);
 
