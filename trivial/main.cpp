@@ -9,59 +9,31 @@
 #include <mongocxx/client.hpp>
 #include <mongocxx/instance.hpp>
 
+#include "config.h"
+#include "slug.h"
 #include "../common/manager.h"
-
-const std::string URL_SHORTENER_DB = "url_shortener";
-const std::string URL_SLUG_COLLECTION = "slug";
-
-const uint32_t SLUG_LENGTH = 6;
-
-const uint32_t DAEMON_LAUNCH_FREQUENCY = 90;
-const uint32_t DAEMON_ITERATION_DURATION = 30;
-
-const uint32_t DEPLOY_PORT = 18080;
-
 
 uint32_t GetCurrentTimestamp() {
     std::time_t result = std::time(nullptr);
     return (uint32_t)(result);
 }
 
-
 class TBasicShortLinkManager : public IShortLinkManager {
 private:
-    std::unique_ptr<mongocxx::instance> MongoInstance;
-    std::unique_ptr<mongocxx::client> MongoClient;
-
-    std::string GenerateNewSlug () const {
-        std::string slug;
-
-        do {
-            slug = "";
-            for (size_t i = 0; i < SLUG_LENGTH; ++i) {
-                uint32_t currentCharIndex = rand() % 62;
-                if (currentCharIndex < 26) {
-                    slug += (char)('a' + currentCharIndex);
-                } else if (currentCharIndex < 26 + 26) {
-                    slug += (char)('A' + currentCharIndex - 26);
-                } else {
-                    slug += (char)('0' + currentCharIndex - 26 - 26);
-                }
-            }
-        }
-        while (GetOriginalLink(slug, nullptr));
-
-        return slug;
-    }
+    std::shared_ptr<mongocxx::instance> MongoInstance;
+    std::shared_ptr<mongocxx::client> MongoClient;
+    std::unique_ptr<ISlugGenerator> SlugGenerator;
 
 public:
-    TBasicShortLinkManager() {
-        MongoInstance = std::unique_ptr<mongocxx::instance>(new mongocxx::instance{});
-        MongoClient = std::unique_ptr<mongocxx::client>(new mongocxx::client{mongocxx::uri{}});
+    TBasicShortLinkManager(std::shared_ptr<mongocxx::instance> mongoInstance, std::shared_ptr<mongocxx::client> mongoClient, std::unique_ptr<ISlugGenerator>&& slugGenerator)
+        : MongoInstance(mongoInstance)
+        , MongoClient(mongoClient)
+        , SlugGenerator(std::move(slugGenerator))
+    {
     }
 
     virtual std::string AddLink (const std::string& originalUrl, const uint32_t ttl) const override final {
-        std::string slug = GenerateNewSlug();
+        std::string slug = SlugGenerator->GenerateNewSlug();
 
         auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
         bsoncxx::builder::stream::document document{};
@@ -207,13 +179,44 @@ public:
 TAccessLog AccessLog; // Can be large while that stack can be small.
 
 int main() {
-    TBasicShortLinkManager Manager;
-    TLinkActualizerDaemon Daemon(Manager, AccessLog, DAEMON_LAUNCH_FREQUENCY);
-    Daemon.Start();
-
     srand(time(nullptr));
     crow::SimpleApp app;
 
+    /*
+        Initialize all of the required stuff.
+
+        Initialize Mongo Instance and Client.
+    */
+
+    std::shared_ptr<mongocxx::instance> MongoInstance = std::shared_ptr<mongocxx::instance>(new mongocxx::instance{});
+    std::shared_ptr<mongocxx::client> MongoClient = std::shared_ptr<mongocxx::client>(new mongocxx::client{mongocxx::uri{}});
+
+    /*
+        Create slug generator according to the config.
+    */
+    std::unique_ptr<ISlugGenerator> slugGenerator;
+    if (SLUG_GENERATOR_TYPE == ESlugGeneratorType::RandomMongoAware) {
+        slugGenerator = std::unique_ptr<ISlugGenerator>(new TRandomMongoAwareSlugGenerator(MongoInstance, MongoClient));
+    } else if (SLUG_GENERATOR_TYPE == ESlugGeneratorType::Sequential) {
+        slugGenerator = std::unique_ptr<ISlugGenerator>(new TSequentialSlugGenerator());
+    }
+
+    /*
+        Create Link Manager with the chosen link generator.
+    */
+    TBasicShortLinkManager Manager(MongoInstance, MongoClient, std::move(slugGenerator));
+
+    /*
+        Start link lifetime watching daemon.
+    */
+    TLinkActualizerDaemon Daemon(Manager, AccessLog, DAEMON_LAUNCH_FREQUENCY);
+    Daemon.Start();
+
+    /*
+        Everything is done in the initialization now. Create endpoints.
+
+        Link posting endpoint.
+    */
     CROW_ROUTE(app, "/link")
         .methods("POST"_method)
         ([&Manager] (const crow::request& req) {
@@ -222,14 +225,24 @@ int main() {
                 return crow::response(400);
             }
 
+            /*
+                Shortening happens here.
+            */
             std::string shortenedLinkSlug = Manager.AddLink(requestJson["original_url"].s(), requestJson["ttl"].i());
 
+            /*
+                201 Created.
+                The path to the shortened link shall be passed through Location header.
+            */
             crow::response response(201);
-            response.add_header("Location", shortenedLinkSlug);
+            response.add_header("Location", BASE_HOST + shortenedLinkSlug);
 
             return response;
         });
 
+    /*
+        Follow-by-link endpoint.
+    */
     CROW_ROUTE(app, "/<string>")
         .methods("GET"_method)
         ([&Manager] (std::string slug) {
@@ -238,13 +251,22 @@ int main() {
             TShortLinkRecord result;
             bool success = Manager.GetOriginalLink(slug, &result);
             if (success && result.ExpirationTimestamp >= GetCurrentTimestamp()) {
+                /*
+                    If the link exists, write it in the location header.
+                */
                 response.add_header("Location", result.OriginalUrl);
                 response.code = 302;
 
+                /*
+                    Extend the lifetime by a direct DB write if it is going to expire soon.
+                */
                 if (result.ExpirationTimestamp - GetCurrentTimestamp() < DAEMON_LAUNCH_FREQUENCY + DAEMON_ITERATION_DURATION) {
                     Manager.ExtendLinkLifetime(slug, GetCurrentTimestamp() + result.TTL);
                 }
 
+                /*
+                    Write an access log entry, so that we can extend non-urgent links in the regular process, later.
+                */
                 AccessLog.RegisterVisit(slug, GetCurrentTimestamp(), result.TTL);
             } else {
                 response.code = 404;

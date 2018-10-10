@@ -107,9 +107,10 @@ GET `/<slug>`
 
      `db.createCollection("slug")`
 
-  7. Создаем индекс по expiration_timestamp:
+  7. Создаем индексы по expiration_timestamp и по slug:
 
-     `db.slug.createIndex({"expiration_timestamp": -1})`
+     `db.slug.createIndex( { expiration_timestamp: -1})`
+     `db.slug.createIndex( { slug: -1 } )`
 
 ## Установка драйвера MongoDB для C++
 
