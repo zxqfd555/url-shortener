@@ -1,6 +1,7 @@
 #include <ctime>
 #include <iostream>
 #include <unordered_set>
+#include <thread>
 
 #include "crow.h"
 #include <bsoncxx/builder/stream/document.hpp>
@@ -10,11 +11,16 @@
 
 #include "../common/manager.h"
 
+using std::cerr;
+using std::endl;
 
 const std::string URL_SHORTENER_DB = "url_shortener";
 const std::string URL_SLUG_COLLECTION = "slug";
 
 const uint32_t SLUG_LENGTH = 6;
+
+const uint32_t DAEMON_LAUNCH_FREQUENCY = 90;
+const uint32_t DAEMON_ITERATION_DURATION = 30;
 
 const uint32_t DEPLOY_PORT = 18080;
 
@@ -106,7 +112,7 @@ public:
         auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
         collection.delete_many(
             bsoncxx::builder::stream::document{} << "expiration_timestamp" << bsoncxx::builder::stream::open_document <<
-            "$lt" << (int64_t)GetCurrentTimestamp() << bsoncxx::builder::stream::close_document << bsoncxx::builder::stream::finalize
+            "$lte" << (int64_t)GetCurrentTimestamp() << bsoncxx::builder::stream::close_document << bsoncxx::builder::stream::finalize
         );
     }
 };
@@ -133,7 +139,6 @@ private:
     std::mutex Lock;
 
 public:
-
     void RegisterVisit (const std::string& slug, const uint32_t timestamp, const uint32_t ttl) {
         std::lock_guard<std::mutex> g(Lock);
         Entries.push_back(TAccessLogEntry(slug, timestamp, ttl));
@@ -156,25 +161,72 @@ public:
             manager.ExtendLinkLifetime(entry.Slug, entry.Timestamp + entry.LinkTTL);
             processedSlugs.insert(entry.Slug);
         }
-        
-        Clear();
+
+        Entries.clear();
     }
 };
 
+class TLinkActualizerDaemon {
+private:
+    const TBasicShortLinkManager& LinkManager;
+    const uint32_t LaunchFrequency;
+    TAccessLog& AccessLog;
+
+    std::unique_ptr<std::thread> mainThread;
+
+    void ProcessLogEntries () {
+        cerr << "Started LinkActualizerDaemon" << endl;
+        while (true) {
+            cerr << "Staring LinkActualizerDaemon iteration" << endl;
+
+            uint32_t tsBeforeLaunch = GetCurrentTimestamp();
+            AccessLog.ExtendVisitedLinksLifetimes(LinkManager);
+            LinkManager.DeleteExpiredLinks();
+            uint32_t timeTotalSpent = GetCurrentTimestamp() - tsBeforeLaunch;
+
+            cerr << "The iteration took " << timeTotalSpent << " seconds" << endl;
+            if (timeTotalSpent < LaunchFrequency) {
+                cerr << "The daemon thread goes to sleep for extra " << LaunchFrequency - timeTotalSpent << " seconds" << endl;
+                std::this_thread::sleep_for(std::chrono::seconds(LaunchFrequency - timeTotalSpent));
+            } else {
+                std::cerr << "Problem! The update was done in " << timeTotalSpent << " seconds, while we only have " << LaunchFrequency << endl;
+            }
+        }
+    }
+
+public:
+    TLinkActualizerDaemon(const TBasicShortLinkManager& linkManager, TAccessLog& accessLog, const uint32_t launchFrequency)
+        : LinkManager(linkManager)
+        , AccessLog(accessLog)
+        , LaunchFrequency(launchFrequency)
+    {
+    }
+
+    void Start() {
+        mainThread = std::unique_ptr<std::thread>(new std::thread(&TLinkActualizerDaemon::ProcessLogEntries, this));
+    }
+};
+
+TAccessLog AccessLog;
+
 int main() {
+    cerr << "Starting program" << endl;
+    TBasicShortLinkManager Manager;
+    TLinkActualizerDaemon Daemon(Manager, AccessLog, DAEMON_LAUNCH_FREQUENCY);
+    Daemon.Start();
+
     srand(time(nullptr));
-    TBasicShortLinkManager manager;
     crow::SimpleApp app;
 
     CROW_ROUTE(app, "/link")
         .methods("POST"_method)
-        ([&manager] (const crow::request& req) {
+        ([&Manager] (const crow::request& req) {
             auto requestJson = crow::json::load(req.body);
             if (!requestJson) {
                 return crow::response(400);
             }
 
-            std::string shortenedLinkSlug = manager.AddLink(requestJson["original_url"].s(), requestJson["ttl"].i());
+            std::string shortenedLinkSlug = Manager.AddLink(requestJson["original_url"].s(), requestJson["ttl"].i());
 
             crow::response response(201);
             response.add_header("Location", shortenedLinkSlug);
@@ -184,18 +236,22 @@ int main() {
 
     CROW_ROUTE(app, "/<string>")
         .methods("GET"_method)
-        ([&manager] (std::string slug) {
+        ([&Manager] (std::string slug) {
             crow::response response;
 
             TShortLinkRecord result;
-            bool success = manager.GetOriginalLink(slug, &result);
+            bool success = Manager.GetOriginalLink(slug, &result);
             if (success && result.ExpirationTimestamp >= GetCurrentTimestamp()) {
                 response.add_header("Location", result.OriginalUrl);
                 response.code = 302;
-                manager.ExtendLinkLifetime(slug, GetCurrentTimestamp() + result.TTL);
+
+                if (result.ExpirationTimestamp - GetCurrentTimestamp() < DAEMON_LAUNCH_FREQUENCY + DAEMON_ITERATION_DURATION) {
+                    Manager.ExtendLinkLifetime(slug, GetCurrentTimestamp() + result.TTL);
+                }
+
+                AccessLog.RegisterVisit(slug, GetCurrentTimestamp(), result.TTL);
             } else {
                 response.code = 404;
-                manager.DeleteLink(slug);
             }
 
             return response;
