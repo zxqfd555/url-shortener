@@ -20,7 +20,7 @@ private:
         }
     };
 
-    std::vector<TAccessLogEntry> Entries;
+    std::map<std::string, TAccessLogEntry> LastVisitEntry;
     std::mutex Lock;
 
 public:
