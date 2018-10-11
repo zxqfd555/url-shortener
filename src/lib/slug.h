@@ -10,6 +10,7 @@
 #include <bsoncxx/json.hpp>
 #include <mongocxx/client.hpp>
 #include <mongocxx/instance.hpp>
+#include <mongocxx/pool.hpp>
 
 class ISlugGenerator {
 public:
@@ -19,11 +20,11 @@ public:
 class TRandomMongoAwareSlugGenerator : public ISlugGenerator {
 private:
     std::shared_ptr<mongocxx::instance> MongoInstance;
-    std::shared_ptr<mongocxx::client> MongoClient;
+    std::shared_ptr<mongocxx::pool> MongoClientPool;
     bool HasLinkWithSlug (const std::string& slug) const;
 
 public:
-    TRandomMongoAwareSlugGenerator(std::shared_ptr<mongocxx::instance> mongoInstance, std::shared_ptr<mongocxx::client> mongoClient);
+    TRandomMongoAwareSlugGenerator(std::shared_ptr<mongocxx::instance> mongoInstance, std::shared_ptr<mongocxx::pool> mongoClientPool);
     virtual std::string GenerateNewSlug () const override;
 };
 

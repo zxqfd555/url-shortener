@@ -6,6 +6,7 @@
 #include <bsoncxx/json.hpp>
 #include <mongocxx/client.hpp>
 #include <mongocxx/instance.hpp>
+#include <mongocxx/pool.hpp>
 
 #include "lib/access_log.h"
 #include "lib/config.h"
@@ -27,15 +28,16 @@ int main() {
         Initialize Mongo Instance and Client.
     */
 
-    std::shared_ptr<mongocxx::instance> MongoInstance = std::shared_ptr<mongocxx::instance>(new mongocxx::instance{});
-    std::shared_ptr<mongocxx::client> MongoClient = std::shared_ptr<mongocxx::client>(new mongocxx::client{mongocxx::uri{}});
+    mongocxx::uri uri{"mongodb://localhost:27017/?minPoolSize=32&maxPoolSize=32"};
+    std::shared_ptr<mongocxx::instance> MongoInstance = std::shared_ptr<mongocxx::instance>(new mongocxx::instance{});   
+    std::shared_ptr<mongocxx::pool> MongoClientPool = std::shared_ptr<mongocxx::pool>(new mongocxx::pool{uri});
 
     /*
         Create slug generator according to the config.
     */
     std::unique_ptr<ISlugGenerator> slugGenerator;
     if (SLUG_GENERATOR_TYPE == ESlugGeneratorType::RandomMongoAware) {
-        slugGenerator = std::unique_ptr<ISlugGenerator>(new TRandomMongoAwareSlugGenerator(MongoInstance, MongoClient));
+        slugGenerator = std::unique_ptr<ISlugGenerator>(new TRandomMongoAwareSlugGenerator(MongoInstance, MongoClientPool));
     } else if (SLUG_GENERATOR_TYPE == ESlugGeneratorType::Sequential) {
         slugGenerator = std::unique_ptr<ISlugGenerator>(new TSequentialSlugGenerator());
     }
@@ -43,7 +45,7 @@ int main() {
     /*
         Create Link Manager with the chosen link generator.
     */
-    TBasicShortLinkManager Manager(MongoInstance, MongoClient, std::move(slugGenerator));
+    TBasicShortLinkManager Manager(MongoInstance, MongoClientPool, std::move(slugGenerator));
 
     /*
         Start link lifetime watching daemon.
@@ -114,9 +116,9 @@ int main() {
             return response;
         });
 
-    app.loglevel(crow::LogLevel::INFO);
+    app.loglevel(crow::LogLevel::CRITICAL);
     app.port(DEPLOY_PORT)
-//        .multithreaded()
+        .multithreaded()
         .run();
 }
 

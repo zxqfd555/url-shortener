@@ -2,9 +2,9 @@
 #include "config.h"
 #include "util.h"
 
-TBasicShortLinkManager::TBasicShortLinkManager(std::shared_ptr<mongocxx::instance> mongoInstance, std::shared_ptr<mongocxx::client> mongoClient, std::unique_ptr<ISlugGenerator>&& slugGenerator)
+TBasicShortLinkManager::TBasicShortLinkManager(std::shared_ptr<mongocxx::instance> mongoInstance, std::shared_ptr<mongocxx::pool> mongoClientPool, std::unique_ptr<ISlugGenerator>&& slugGenerator)
     : MongoInstance(mongoInstance)
-    , MongoClient(mongoClient)
+    , MongoClientPool(mongoClientPool)
     , SlugGenerator(std::move(slugGenerator))
 {
 }
@@ -12,7 +12,8 @@ TBasicShortLinkManager::TBasicShortLinkManager(std::shared_ptr<mongocxx::instanc
 std::string TBasicShortLinkManager::AddLink (const std::string& originalUrl, const uint32_t ttl) const {
     std::string slug = SlugGenerator->GenerateNewSlug();
 
-    auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
+    auto client = MongoClientPool->acquire();
+    auto collection = (*client)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
     bsoncxx::builder::stream::document document{};
     document << "original_url" << originalUrl;
     document << "slug" << slug;
@@ -24,7 +25,8 @@ std::string TBasicShortLinkManager::AddLink (const std::string& originalUrl, con
 }
 
 bool TBasicShortLinkManager::GetOriginalLink (const std::string& slug, TShortLinkRecord* result) const {
-    auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
+    auto client = MongoClientPool->acquire();
+    auto collection = (*client)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
     bsoncxx::stdx::optional<bsoncxx::document::value> maybeResult;
     try {
         maybeResult = collection.find_one(bsoncxx::builder::stream::document{} << "slug" << slug << bsoncxx::builder::stream::finalize);
@@ -46,7 +48,8 @@ bool TBasicShortLinkManager::GetOriginalLink (const std::string& slug, TShortLin
 }
 
 void TBasicShortLinkManager::ExtendLinkLifetime (const std::string& slug, const uint32_t newExpirationTimestamp) const {
-    auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
+    auto client = MongoClientPool->acquire();
+    auto collection = (*client)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
     try {
         collection.update_one(
             bsoncxx::builder::stream::document{} << "slug" << slug << bsoncxx::builder::stream::finalize,
@@ -59,12 +62,14 @@ void TBasicShortLinkManager::ExtendLinkLifetime (const std::string& slug, const 
 }
 
 void TBasicShortLinkManager::DeleteLink (const std::string& slug) const {
-    auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];    
+    auto client = MongoClientPool->acquire();
+    auto collection = (*client)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
     collection.delete_one(bsoncxx::builder::stream::document{} << "slug" << slug << bsoncxx::builder::stream::finalize);
 }
 
 void TBasicShortLinkManager::DeleteExpiredLinks () const {
-    auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
+    auto client = MongoClientPool->acquire();
+    auto collection = (*client)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
     try {
         collection.delete_many(
             bsoncxx::builder::stream::document{} << "expiration_timestamp" << bsoncxx::builder::stream::open_document <<

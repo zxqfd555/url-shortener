@@ -2,14 +2,15 @@
 #include "config.h"
 
 bool TRandomMongoAwareSlugGenerator::HasLinkWithSlug (const std::string& slug) const {
-    auto collection = (*MongoClient)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
+    auto client = MongoClientPool->acquire();
+    auto collection = (*client)[URL_SHORTENER_DB][URL_SLUG_COLLECTION];
     bsoncxx::stdx::optional<bsoncxx::document::value> maybeResult = collection.find_one(bsoncxx::builder::stream::document{} << "slug" << slug << bsoncxx::builder::stream::finalize);
     return !!maybeResult;
 }
 
-TRandomMongoAwareSlugGenerator::TRandomMongoAwareSlugGenerator(std::shared_ptr<mongocxx::instance> mongoInstance, std::shared_ptr<mongocxx::client> mongoClient)
+TRandomMongoAwareSlugGenerator::TRandomMongoAwareSlugGenerator(std::shared_ptr<mongocxx::instance> mongoInstance, std::shared_ptr<mongocxx::pool> mongoClientPool)
     : MongoInstance(mongoInstance)
-    , MongoClient(mongoClient)
+    , MongoClientPool(mongoClientPool)
 {
 }
 
