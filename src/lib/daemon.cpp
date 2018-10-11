@@ -14,9 +14,7 @@ void TLinkActualizerDaemon::ProcessLogEntries () {
 
         uint32_t tsBeforeLaunch = GetCurrentTimestamp();
         AccessLog.ExtendVisitedLinksLifetimes(LinkManager);
-        CROW_LOG_INFO << "Done with extend";
         LinkManager.DeleteExpiredLinks();
-        CROW_LOG_INFO << "Done with deletion of expired";
         uint32_t timeTotalSpent = GetCurrentTimestamp() - tsBeforeLaunch;
 
         CROW_LOG_INFO << "The iteration took " << timeTotalSpent << " seconds";
