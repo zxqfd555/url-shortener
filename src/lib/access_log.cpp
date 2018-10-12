@@ -13,20 +13,16 @@ void TAccessLog::Clear () {
 void TAccessLog::ExtendVisitedLinksLifetimes (const TBasicShortLinkManager& manager) {
     std::map<std::string, TAccessLogEntry> ProcessableEntries;
     {
-        CROW_LOG_INFO << "Before acquire mutex";
         std::lock_guard<std::mutex> g(Lock);
-        CROW_LOG_INFO << "After acquire mutex";
         ProcessableEntries = std::move(LastVisitEntry);
-        CROW_LOG_INFO << "After move";
         LastVisitEntry.clear();
-        CROW_LOG_INFO << "After clear";
     }
 
-    CROW_LOG_INFO << "Before iterating";
+    std::vector<std::pair<std::string, std::uint32_t>> updateBulk;
     for (auto&& entryIt : ProcessableEntries) {
-        CROW_LOG_INFO << "Before extend";
-        manager.ExtendLinkLifetime(entryIt.second.Slug, entryIt.second.Timestamp + entryIt.second.LinkTTL);
-        CROW_LOG_INFO << "After extend";
+        updateBulk.push_back(std::make_pair(entryIt.second.Slug, entryIt.second.Timestamp + entryIt.second.LinkTTL));
     }
+    CROW_LOG_CRITICAL << "Update bulk size" << updateBulk.size();
+    manager.BulkExtendLifetime(std::move(updateBulk));
 }
 

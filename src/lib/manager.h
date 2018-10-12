@@ -6,6 +6,8 @@
 #include <thread>
 
 #include "crow.h"
+#include <bsoncxx/builder/basic/document.hpp>
+#include <bsoncxx/builder/basic/kvp.hpp>
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/json.hpp>
 #include <mongocxx/client.hpp>
@@ -32,6 +34,7 @@ public:
     std::string AddLink (const std::string& originalUrl, const uint32_t ttl) const;
     bool GetOriginalLink (const std::string& slug, TShortLinkRecord* result) const;
     void ExtendLinkLifetime (const std::string& slug, const uint32_t newExpirationTimestamp) const;
+    void BulkExtendLifetime (const std::vector<std::pair<std::string, std::uint32_t>>&& items) const;
     void DeleteLink (const std::string& slug) const;
     void DeleteExpiredLinks () const;
 };

@@ -17,7 +17,7 @@ void TLinkActualizerDaemon::ProcessLogEntries () {
         LinkManager.DeleteExpiredLinks();
         uint32_t timeTotalSpent = GetCurrentTimestamp() - tsBeforeLaunch;
 
-        CROW_LOG_INFO << "The iteration took " << timeTotalSpent << " seconds";
+        CROW_LOG_CRITICAL << "The iteration took " << timeTotalSpent << " seconds";
         if (timeTotalSpent < LaunchFrequency) {
             CROW_LOG_INFO << "The daemon thread goes to sleep for extra " << LaunchFrequency - timeTotalSpent << " seconds";
             std::this_thread::sleep_for(std::chrono::seconds(LaunchFrequency - timeTotalSpent));

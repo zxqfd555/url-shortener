@@ -28,7 +28,7 @@ int main() {
         Initialize Mongo Instance and Client.
     */
 
-    mongocxx::uri uri{"mongodb://localhost:27017/?minPoolSize=32&maxPoolSize=32"};
+    mongocxx::uri uri{"mongodb://localhost:27017/?minPoolSize=128&maxPoolSize=128"};
     std::shared_ptr<mongocxx::instance> MongoInstance = std::shared_ptr<mongocxx::instance>(new mongocxx::instance{});   
     std::shared_ptr<mongocxx::pool> MongoClientPool = std::shared_ptr<mongocxx::pool>(new mongocxx::pool{uri});
 
