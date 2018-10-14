@@ -50,7 +50,8 @@ def generate(lines_count):
     for _ in range(lines_count):
         if random.randint(0, 99) > 98 or total_shortened_links == 0:
             headers = """Content-Type: application/json
-Host: localhost:18080"""
+Host: localhost:18080
+Connection: close"""
 
             ttl = random.randint(10, 3600 * 3)
             if ttl < 90:
@@ -65,7 +66,8 @@ Host: localhost:18080"""
             sys.stdout.write(make_ammo('POST', '/link', headers, 'the_only_tag', body))
             total_shortened_links += 1
         else:
-            headers = 'Host: localhost:18080'
+            headers = """Host: localhost:18080
+Connection: close"""
             link_number = numpy.random.poisson(1) % total_shortened_links + 1
             if link_number == 0:
                 link_number += 1
