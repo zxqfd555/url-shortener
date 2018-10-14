@@ -43,7 +43,8 @@ def make_ammo(method, url, headers, case, body):
 def generate(lines_count):
     for _ in range(lines_count):
         headers = """Content-Type: application/json
-Host: localhost:18080"""
+Host: localhost:18080
+Connection: close"""
 
         payload = {
             'original_url': 'http://localhost',

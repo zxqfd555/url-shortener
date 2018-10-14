@@ -1,4 +1,5 @@
-Fuckup: https://overload.yandex.net/128374
+Fuckup: https://overload.yandex.net/128843
 
-Stability: https://overload.yandex.net/128293 https://overload.yandex.net/128373
+Stability: https://overload.yandex.net/128845
+
 
